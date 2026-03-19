@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TeamsMentionExtractor</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 24px;
+        color: #222;
+      }
+
+      h1 {
+        margin-bottom: 8px;
+      }
+
+      .desc {
+        margin-bottom: 16px;
+        padding: 1px 12px;
+        background: #f5f5f5;
+        border-radius: 8px;
+      }
+
+      button {
+        padding: 10px 16px;
+        cursor: pointer;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        background: #fff;
+      }
+
+      button:hover {
+        background: #f3f3f3;
+      }
+
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        margin-top: 12px;
+        padding: 12px;
+        height: 93px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+      }
+
+      .card {
+        margin-top: 16px;
+        padding: 16px;
+        border-radius: 12px;
+        border: 1px solid #ddd;
+        background: #fafafa;
+      }
+
+      .row {
+        margin-bottom: 8px;
+      }
+
+      .label {
+        font-size: 12px;
+        color: #666;
+      }
+
+      .value {
+        cursor: pointer;
+        padding: 6px 8px;
+        border-radius: 6px;
+        display: inline-block;
+        transition: 0.15s;
+      }
+
+      .value:hover {
+        background: #eaeaea;
+      }
+
+      .copied {
+        background: #d4f8d4 !important;
+      }
+
+      .section-title {
+        margin-top: 20px;
+        font-weight: bold;
+      }
+
+      .note {
+        font-size: 13px;
+        color: #666;
+        margin-top: 10px;
+      }
+
+      .row-indent {
+        margin-left: 20px;
+        border-left: 2px solid #ddd;
+        padding-left: 8px;
+      }
+
+      .value-emphasis {
+        font-weight: bold;
+        color: #1a6bbf;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TeamsMentionExtractor</h1>
+
+    <div class="desc">
+      <p>
+        Teams メンションの HTML から aria-label / type / mri 属性を抽出します。
+      </p>
+      <p>
+        Teams
+        アプリでメンションを含むテキストを作成し、クリップボードにコピーしてください。<br />その状態で、以下の「クリップボードを解析」を押すと、メンション情報が抽出されます。
+      </p>
+    </div>
+
+    <button id="readBtn">クリップボードを解析</button>
+
+    <div class="section-title">取得した text/html</div>
+    <textarea id="rawHtml" readonly></textarea>
+
+    <div class="section-title">MRI (Message Routing Identifier) 抽出結果</div>
+    <div id="result"></div>
+
+    <div class="note" id="note" hidden>
+      ※ 各値はクリックでクリップボードにコピーされます
+    </div>
+
+    <script>
+      const rawHtmlEl = document.getElementById("rawHtml");
+      const resultEl = document.getElementById("result");
+      const noteEl = document.getElementById("note");
+
+      function parseMRI(mri) {
+        if (!mri) return { raw: "", prefix: "", id_type: "", id: "" };
+        const parts = mri.split(":");
+
+        return {
+          raw: mri,
+          prefix: parts[0] || "",
+          id_type: parts[1] || "",
+          id: parts.slice(2).join(":") || "",
+        };
+      }
+
+      function extract(html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const mentions = doc.querySelectorAll("mention");
+
+        return Array.from(mentions).map((m, i) => {
+          const mri = m.getAttribute("mri") || "";
+          return {
+            index: i + 1,
+            ariaLabel: m.getAttribute("aria-label") || "",
+            type: m.getAttribute("type") || "",
+            mri: parseMRI(mri),
+          };
+        });
+      }
+
+      function createRow(label, value, emphasis = false) {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const labelEl = document.createElement("div");
+        labelEl.className = "label";
+        labelEl.textContent = label;
+
+        const valueEl = document.createElement("div");
+        valueEl.className = emphasis ? "value value-emphasis" : "value";
+        valueEl.textContent = value || "";
+
+        valueEl.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(value || "");
+            valueEl.classList.add("copied");
+            setTimeout(() => valueEl.classList.remove("copied"), 500);
+          } catch (e) {
+            valueEl.textContent = "コピー失敗";
+            setTimeout(() => (valueEl.textContent = value || ""), 1500);
+          }
+        });
+
+        row.appendChild(labelEl);
+        row.appendChild(valueEl);
+
+        return row;
+      }
+
+      function render(items) {
+        resultEl.innerHTML = "";
+
+        if (!items.length) {
+          noteEl.hidden = true;
+          resultEl.textContent = "mention が見つかりませんでした";
+          return;
+        }
+
+        noteEl.hidden = false;
+        items.forEach((item) => {
+          const card = document.createElement("div");
+          card.className = "card";
+
+          card.appendChild(createRow("aria-label", item.ariaLabel));
+          card.appendChild(createRow("type", item.type));
+          card.appendChild(createRow("mri", item.mri.raw));
+          const mriChildren = [
+            createRow("prefix", item.mri.prefix),
+            createRow("id_type", item.mri.id_type),
+            createRow("id", item.mri.id, true),
+          ];
+          mriChildren.forEach((row) => {
+            row.classList.add("row-indent");
+            card.appendChild(row);
+          });
+
+          resultEl.appendChild(card);
+        });
+      }
+
+      async function readClipboardHtml() {
+        rawHtmlEl.value = "";
+        resultEl.innerHTML = "";
+        noteEl.hidden = true;
+
+        const btn = document.getElementById("readBtn");
+        btn.disabled = true;
+        try {
+          const items = await navigator.clipboard.read();
+          let html = null;
+
+          for (const item of items) {
+            if (item.types.includes("text/html")) {
+              const blob = await item.getType("text/html");
+              html = await blob.text();
+              break;
+            }
+          }
+
+          if (!html) {
+            resultEl.textContent = "text/html が見つかりませんでした";
+            return;
+          }
+
+          rawHtmlEl.value = html;
+
+          const data = extract(html);
+          render(data);
+        } catch (err) {
+          resultEl.textContent = "読み取り失敗: " + err.message;
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      document
+        .getElementById("readBtn")
+        .addEventListener("click", readClipboardHtml);
+    </script>
+  </body>
+</html>
