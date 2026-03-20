@@ -138,7 +138,8 @@ async function analyzeClipboard() {
   } catch (err) {
     const empty = document.createElement("div");
     empty.className = "result-empty";
-    empty.textContent = "読み取り失敗: " + err.message;
+    empty.textContent = "クリップボードの読み取りに失敗しました。ブラウザの権限設定を確認してください。";
+    console.error("Clipboard read error:", err);
     resultEl.appendChild(empty);
   } finally {
     btn.disabled = false;
